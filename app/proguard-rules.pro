@@ -1,0 +1,3 @@
+-keepattributes *Annotation*, Signature, InnerClasses, EnclosingMethod
+-keep class com.zive.moneymanager.data.db.entity.** { *; }
+-dontwarn org.jetbrains.annotations.**
