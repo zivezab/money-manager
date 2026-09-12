@@ -26,6 +26,23 @@ class AppContainer(context: Context) {
 
     /** Shared across tabs so the chosen month follows you between screens. */
     val periodController: PeriodController = PeriodController()
+
+    companion object {
+        @Volatile private var instance: AppContainer? = null
+
+        /**
+         * The process-wide container. Reachable from any [Context], which matters
+         * for WorkManager: a worker is handed a plain context, and casting it to
+         * the Application class only happens to work in production.
+         *
+         * Nothing is duplicated by calling this early — the database and the
+         * preference store underneath are themselves singletons.
+         */
+        fun get(context: Context): AppContainer =
+            instance ?: synchronized(this) {
+                instance ?: AppContainer(context.applicationContext).also { instance = it }
+            }
+    }
 }
 
 /** Pulls the container out of the ViewModel creation extras. */

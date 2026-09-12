@@ -4,6 +4,9 @@ import androidx.room.TypeConverter
 import com.zive.moneymanager.data.db.entity.AccountType
 import com.zive.moneymanager.data.db.entity.BudgetPeriod
 import com.zive.moneymanager.data.db.entity.IncomeKind
+import com.zive.moneymanager.data.db.entity.ItemKind
+import com.zive.moneymanager.data.db.entity.ItemStatus
+import com.zive.moneymanager.data.db.entity.QuantityUnit
 import com.zive.moneymanager.data.db.entity.RecurrenceUnit
 import com.zive.moneymanager.data.db.entity.TxType
 
@@ -27,4 +30,13 @@ class Converters {
 
     @TypeConverter fun budgetPeriodToString(v: BudgetPeriod?): String? = v?.name
     @TypeConverter fun stringToBudgetPeriod(v: String?): BudgetPeriod? = v?.let { runCatching { BudgetPeriod.valueOf(it) }.getOrNull() }
+
+    @TypeConverter fun itemKindToString(v: ItemKind?): String? = v?.name
+    @TypeConverter fun stringToItemKind(v: String?): ItemKind? = v?.let { runCatching { ItemKind.valueOf(it) }.getOrNull() }
+
+    @TypeConverter fun itemStatusToString(v: ItemStatus?): String? = v?.name
+    @TypeConverter fun stringToItemStatus(v: String?): ItemStatus? = v?.let { runCatching { ItemStatus.valueOf(it) }.getOrNull() }
+
+    @TypeConverter fun quantityUnitToString(v: QuantityUnit?): String? = v?.name
+    @TypeConverter fun stringToQuantityUnit(v: String?): QuantityUnit? = v?.let { runCatching { QuantityUnit.valueOf(it) }.getOrNull() }
 }

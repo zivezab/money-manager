@@ -5,18 +5,25 @@ import com.zive.moneymanager.data.db.AppDatabase
 import com.zive.moneymanager.data.db.entity.Account
 import com.zive.moneymanager.data.db.entity.Budget
 import com.zive.moneymanager.data.db.entity.Category
+import com.zive.moneymanager.data.db.entity.InventoryItem
+import com.zive.moneymanager.data.db.entity.ItemKind
+import com.zive.moneymanager.data.db.entity.ItemStatus
 import com.zive.moneymanager.data.db.entity.RecurringRule
 import com.zive.moneymanager.data.db.entity.TransactionEntity
 import com.zive.moneymanager.data.db.entity.TxType
 import com.zive.moneymanager.data.db.model.AccountBalance
 import com.zive.moneymanager.data.db.model.CategoryTotal
 import com.zive.moneymanager.data.db.model.DayTotal
+import com.zive.moneymanager.data.db.model.DuplicateGroup
+import com.zive.moneymanager.data.db.model.InventoryItemDetail
+import com.zive.moneymanager.data.db.model.InventorySummary
 import com.zive.moneymanager.data.db.model.IncomeKindTotal
 import com.zive.moneymanager.data.db.model.PeriodTotals
 import com.zive.moneymanager.data.db.model.TransactionDetail
 import com.zive.moneymanager.data.seed.DefaultData
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import java.time.LocalDate
 
 /**
  * Single entry point onto the database. Screens talk to this rather than to DAOs
@@ -29,6 +36,7 @@ class FinanceRepository(private val db: AppDatabase) {
     private val transactions = db.transactionDao()
     private val budgets = db.budgetDao()
     private val recurring = db.recurringDao()
+    private val inventory = db.inventoryDao()
 
     // ---- Accounts ----------------------------------------------------------
 
@@ -134,6 +142,84 @@ class FinanceRepository(private val db: AppDatabase) {
     suspend fun postTransactions(rows: List<TransactionEntity>) {
         if (rows.isNotEmpty()) transactions.insertAll(rows)
     }
+
+
+    // ---- Inventory ---------------------------------------------------------
+
+    fun observeInventory(
+        heldOnly: Boolean = true,
+        kind: ItemKind? = null,
+        status: ItemStatus? = null,
+        categoryId: Long? = null,
+        location: String? = null,
+        query: String? = null,
+    ): Flow<List<InventoryItemDetail>> = inventory.observeItems(
+        heldOnly = heldOnly,
+        kind = kind,
+        status = status,
+        categoryId = categoryId,
+        location = location?.takeIf { it.isNotBlank() },
+        query = query?.trim()?.takeIf { it.isNotEmpty() },
+    )
+
+    fun observeExpiringBy(horizon: LocalDate): Flow<List<InventoryItemDetail>> =
+        inventory.observeExpiringBy(horizon.toEpochDay())
+
+    suspend fun expiringByOnce(horizon: LocalDate): List<InventoryItemDetail> =
+        inventory.expiringByOnce(horizon.toEpochDay())
+
+    fun observePendingDisposal(): Flow<List<InventoryItemDetail>> =
+        inventory.observePendingDisposal()
+
+    fun observeDuplicateGroups(): Flow<List<DuplicateGroup>> =
+        inventory.observeDuplicateGroups()
+
+    fun observeUntouchedSince(cutoff: LocalDate): Flow<List<InventoryItemDetail>> =
+        inventory.observeUntouchedSince(cutoff.toEpochDay())
+
+    fun observeInventorySummary(today: LocalDate, horizon: LocalDate): Flow<InventorySummary> =
+        inventory.observeSummary(today.toEpochDay(), horizon.toEpochDay())
+
+    fun observeInventoryLocations(): Flow<List<String>> = inventory.observeLocations()
+
+    suspend fun inventoryItem(id: Long): InventoryItem? = inventory.byId(id)
+
+    suspend fun inventoryCount(): Int = inventory.count()
+
+    suspend fun allInventoryForExport(): List<InventoryItem> = inventory.allForExport()
+
+    /** Keeps [InventoryItem.nameKey] and [InventoryItem.updatedAt] consistent on every write. */
+    suspend fun upsertInventoryItem(item: InventoryItem): Long {
+        val normalised = item.copy(
+            nameKey = InventoryItem.keyOf(item.name),
+            updatedAt = System.currentTimeMillis(),
+        )
+        return if (normalised.id == 0L) {
+            inventory.insert(normalised)
+        } else {
+            normalised.id.also { inventory.update(normalised) }
+        }
+    }
+
+    suspend fun insertInventoryItems(items: List<InventoryItem>) {
+        if (items.isNotEmpty()) {
+            inventory.insertAll(items.map { it.copy(nameKey = InventoryItem.keyOf(it.name)) })
+        }
+    }
+
+    suspend fun setInventoryStatus(id: Long, status: ItemStatus, today: LocalDate = LocalDate.now()) {
+        inventory.setStatus(id, status, today.toEpochDay(), System.currentTimeMillis())
+    }
+
+    suspend fun markInventoryUsed(id: Long, date: LocalDate = LocalDate.now()) {
+        inventory.markUsedToday(id, date.toEpochDay(), System.currentTimeMillis())
+    }
+
+    suspend fun setInventoryExpiry(id: Long, expiry: LocalDate?) {
+        inventory.setExpiry(id, expiry?.toEpochDay(), System.currentTimeMillis())
+    }
+
+    suspend fun deleteInventoryItem(id: Long) = inventory.deleteById(id)
 
     // ---- First run ---------------------------------------------------------
 

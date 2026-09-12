@@ -9,11 +9,13 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.zive.moneymanager.data.db.dao.AccountDao
 import com.zive.moneymanager.data.db.dao.BudgetDao
 import com.zive.moneymanager.data.db.dao.CategoryDao
+import com.zive.moneymanager.data.db.dao.InventoryDao
 import com.zive.moneymanager.data.db.dao.RecurringDao
 import com.zive.moneymanager.data.db.dao.TransactionDao
 import com.zive.moneymanager.data.db.entity.Account
 import com.zive.moneymanager.data.db.entity.Budget
 import com.zive.moneymanager.data.db.entity.Category
+import com.zive.moneymanager.data.db.entity.InventoryItem
 import com.zive.moneymanager.data.db.entity.RecurringRule
 import com.zive.moneymanager.data.db.entity.TransactionEntity
 
@@ -24,8 +26,9 @@ import com.zive.moneymanager.data.db.entity.TransactionEntity
         TransactionEntity::class,
         Budget::class,
         RecurringRule::class,
+        InventoryItem::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -36,6 +39,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun transactionDao(): TransactionDao
     abstract fun budgetDao(): BudgetDao
     abstract fun recurringDao(): RecurringDao
+    abstract fun inventoryDao(): InventoryDao
 
     companion object {
         private const val NAME = "money-manager.db"
@@ -49,6 +53,7 @@ abstract class AppDatabase : RoomDatabase() {
 
         private fun build(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, NAME)
+                .addMigrations(MIGRATION_1_2)
                 .addCallback(object : Callback() {
                     override fun onOpen(db: SupportSQLiteDatabase) {
                         super.onOpen(db)

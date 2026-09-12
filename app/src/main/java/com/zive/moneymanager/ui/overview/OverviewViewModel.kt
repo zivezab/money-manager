@@ -6,9 +6,12 @@ import com.zive.moneymanager.core.Period
 import com.zive.moneymanager.core.PeriodController
 import com.zive.moneymanager.core.PeriodType
 import com.zive.moneymanager.data.db.entity.IncomeKind
+import com.zive.moneymanager.data.db.entity.ItemStatus
 import com.zive.moneymanager.data.db.entity.TxType
 import com.zive.moneymanager.data.db.model.AccountBalance
 import com.zive.moneymanager.data.db.model.CategoryTotal
+import com.zive.moneymanager.data.db.model.InventoryItemDetail
+import com.zive.moneymanager.data.db.model.InventorySummary
 import com.zive.moneymanager.data.db.model.PeriodTotals
 import com.zive.moneymanager.data.db.model.TransactionDetail
 import com.zive.moneymanager.data.prefs.AppSettings
@@ -25,6 +28,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import java.time.LocalDate
 
 data class IncomeSplit(
@@ -45,9 +49,16 @@ data class OverviewUiState(
     val accounts: List<AccountBalance> = emptyList(),
     val recent: List<TransactionDetail> = emptyList(),
     val budgets: List<BudgetProgress> = emptyList(),
+    val inventory: InventorySummary = InventorySummary(),
+    /** The handful of items shown on the overview's expiry checklist card. */
+    val expiringSoon: List<InventoryItemDetail> = emptyList(),
     val loading: Boolean = true,
 ) {
     val netWorthMinor: Long get() = accounts.filter { it.includeInTotal && !it.archived }.sumOf { it.balanceMinor }
+
+    /** Whether the overview should surface the inventory card at all. */
+    val showInventoryCard: Boolean
+        get() = inventory.needsAttentionCount > 0 || inventory.pendingDisposalCount > 0
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -122,7 +133,20 @@ class OverviewViewModel(
             }
     }
 
-    val state = combine(context, ledger, budgets) { ctx, snapshot, budgetProgress ->
+    /**
+     * Inventory is keyed to today rather than to the selected period — what is
+     * going off this week does not change because you scrolled back to March.
+     */
+    private val inventory = settingsStore.settings.flatMapLatest { settings ->
+        val today = LocalDate.now()
+        val horizon = settings.expiryHorizon(today)
+        combine(
+            repo.observeInventorySummary(today, horizon),
+            repo.observeExpiringBy(horizon),
+        ) { summary, expiring -> summary to expiring }
+    }
+
+    val state = combine(context, ledger, budgets, inventory) { ctx, snapshot, budgetProgress, inv ->
         OverviewUiState(
             period = ctx.period,
             settings = ctx.settings,
@@ -132,6 +156,8 @@ class OverviewViewModel(
             accounts = snapshot.accounts,
             recent = snapshot.recent,
             budgets = budgetProgress,
+            inventory = inv.first,
+            expiringSoon = inv.second.take(4),
             loading = false,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), OverviewUiState())
@@ -140,6 +166,11 @@ class OverviewViewModel(
     val dataStart = repo.observeEarliestDay()
         .map { it?.let { day -> LocalDate.ofEpochDay(day) } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** The tick on the expiry card: the item is finished and leaves stock. */
+    fun markInventoryUsedUp(id: Long) {
+        viewModelScope.launch { repo.setInventoryStatus(id, ItemStatus.USED_UP) }
+    }
 
     companion object {
         val Factory = containerFactory { c: AppContainer ->

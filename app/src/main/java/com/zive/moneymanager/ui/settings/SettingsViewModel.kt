@@ -11,6 +11,7 @@ import com.zive.moneymanager.data.csv.CsvSupport
 import com.zive.moneymanager.data.prefs.AppSettings
 import com.zive.moneymanager.data.prefs.SettingsStore
 import com.zive.moneymanager.data.prefs.ThemeMode
+import com.zive.moneymanager.data.reminder.ExpiryReminderWorker
 import com.zive.moneymanager.data.repo.FinanceRepository
 import com.zive.moneymanager.di.AppContainer
 import com.zive.moneymanager.di.containerFactory
@@ -20,6 +21,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -68,6 +70,29 @@ class SettingsViewModel(
     fun setWeekStart(day: DayOfWeek) = viewModelScope.launch { store.setWeekStart(day) }
     fun setMonthStartDay(day: Int) = viewModelScope.launch { store.setMonthStartDay(day) }
     fun setDefaultPeriod(type: PeriodType) = viewModelScope.launch { store.setDefaultPeriod(type) }
+    fun setExpiryHorizonDays(days: Int) = viewModelScope.launch { store.setExpiryHorizonDays(days) }
+    fun setDeclutterIdleMonths(months: Int) = viewModelScope.launch { store.setDeclutterIdleMonths(months) }
+
+    /** Toggling the reminder has to (re)schedule the worker, not just save a flag. */
+    fun setExpiryReminderEnabled(context: Context, enabled: Boolean) {
+        viewModelScope.launch {
+            store.setExpiryReminderEnabled(enabled)
+            if (enabled) {
+                ExpiryReminderWorker.schedule(context, store.settings.first().expiryReminderHour)
+            } else {
+                ExpiryReminderWorker.cancel(context)
+            }
+        }
+    }
+
+    fun setExpiryReminderHour(context: Context, hour: Int) {
+        viewModelScope.launch {
+            store.setExpiryReminderHour(hour)
+            if (store.settings.first().expiryReminderEnabled) {
+                ExpiryReminderWorker.schedule(context, hour)
+            }
+        }
+    }
 
     /** Writes the whole ledger as CSV to a location the user picked. */
     fun exportTo(context: Context, uri: Uri) {

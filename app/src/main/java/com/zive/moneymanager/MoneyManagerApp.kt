@@ -1,6 +1,8 @@
 package com.zive.moneymanager
 
 import android.app.Application
+import com.zive.moneymanager.data.reminder.ExpiryNotifier
+import com.zive.moneymanager.data.reminder.ExpiryReminderWorker
 import com.zive.moneymanager.di.AppContainer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -18,7 +20,9 @@ class MoneyManagerApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        container = AppContainer(this)
+        container = AppContainer.get(this)
+
+        ExpiryNotifier.ensureChannel(this)
 
         appScope.launch {
             // First launch gets the starter accounts and category tree.
@@ -31,6 +35,14 @@ class MoneyManagerApp : Application() {
             if (lastRun != today.toEpochDay()) {
                 container.recurringEngine.postDue(today)
                 container.settings.setLastRecurringRun(today.toEpochDay())
+            }
+
+            // Keep the daily expiry check in step with the current preference.
+            val settings = container.settings.settings.first()
+            if (settings.expiryReminderEnabled) {
+                ExpiryReminderWorker.schedule(this@MoneyManagerApp, settings.expiryReminderHour)
+            } else {
+                ExpiryReminderWorker.cancel(this@MoneyManagerApp)
             }
         }
     }

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Savings
 import androidx.compose.material3.Card
@@ -21,6 +22,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -48,6 +50,7 @@ import java.time.LocalDate
 @Composable
 fun BudgetsScreen(
     state: BudgetsUiState,
+    onBack: () -> Unit,
     onSave: (Long, Long?, Long, com.zive.moneymanager.data.db.entity.BudgetPeriod, Boolean) -> Unit,
     onDelete: (Budget) -> Unit,
     modifier: Modifier = Modifier,
@@ -63,7 +66,17 @@ fun BudgetsScreen(
         // taking them again here would double the gap under the top bar.
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         modifier = modifier,
-        topBar = { TopAppBar(title = { Text("Budgets") }, windowInsets = WindowInsets(0, 0, 0, 0)) },
+        topBar = {
+            TopAppBar(
+                windowInsets = WindowInsets(0, 0, 0, 0),
+                title = { Text("Budgets") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+            )
+        },
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { creating = true },

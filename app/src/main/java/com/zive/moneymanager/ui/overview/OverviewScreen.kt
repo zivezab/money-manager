@@ -45,6 +45,9 @@ fun OverviewScreen(
     onOpenBudgets: () -> Unit,
     onOpenAccounts: () -> Unit,
     onOpenStats: () -> Unit,
+    onOpenInventory: () -> Unit,
+    onOpenInventoryItem: (Long) -> Unit,
+    onMarkItemUsed: (Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val today = LocalDate.now()
@@ -72,6 +75,21 @@ fun OverviewScreen(
                     periodLabel = state.period.label(today),
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                 )
+            }
+
+            if (state.showInventoryCard) {
+                item {
+                    ExpiryChecklistCard(
+                        summary = state.inventory,
+                        items = state.expiringSoon,
+                        today = today,
+                        onMarkUsed = onMarkItemUsed,
+                        onOpenInventory = onOpenInventory,
+                        onOpenItem = onOpenInventoryItem,
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                    )
+                }
+                item { Spacer(Modifier.height(8.dp)) }
             }
 
             if (state.incomeSplit.totalMinor > 0) {

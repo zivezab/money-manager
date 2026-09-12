@@ -12,6 +12,12 @@ import com.zive.moneymanager.ui.theme.MoneyManagerTheme
 
 class MainActivity : ComponentActivity() {
 
+    companion object {
+        /** Set by the expiry notification so the app opens on the checklist. */
+        const val EXTRA_OPEN_EXPIRY = "open_expiry_checklist"
+    }
+
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
@@ -26,7 +32,11 @@ class MainActivity : ComponentActivity() {
                 themeMode = settings.themeMode,
                 dynamicColor = settings.dynamicColor,
             ) {
-                MoneyManagerRoot(settings = settings)
+                MoneyManagerRoot(
+                    settings = settings,
+                    // Tapping the expiry notification should land on the checklist.
+                    openExpiryChecklist = intent?.getBooleanExtra(EXTRA_OPEN_EXPIRY, false) == true,
+                )
             }
         }
     }

@@ -50,6 +50,35 @@ comparing income against expenses across the period's own sub-ranges (days in a
 week, weeks in a month, months in a year), category rankings with share-of-total
 meters, and drill-down into subcategories.
 
+**Inventory and assets.** A second ledger for the things themselves, kept in the
+same database so a purchase can point at the expense that bought it. Two kinds:
+consumables that get used up and can expire, and assets that are kept and can sit
+unused. Each carries a quantity and unit, a storage location, what it cost, and —
+depending on kind — a use-by date, a warranty end, or when you last used it.
+
+**Expiry checklist and reminder.** The overview leads with what is going off:
+expired, today, next three days, and so on, each line one tap from "used",
+"binned", or "+7 days" when it is still fine. Snoozing something already overdue
+pushes it forward from today rather than from its stale date. A daily
+notification at an hour you pick names what is close to its date; it stays silent
+on days when nothing is. The full checklist lives on the Inventory tab.
+
+**Declutter, without the nagging.** Three things the data can say on its own:
+
+- **You own more than one** — held items grouped by name, showing the total
+  quantity, where the copies are, and what they came to.
+- **Untouched for months** — assets still in stock whose last use, or purchase
+  date when they have never been used, is older than a threshold you set.
+  Consumables are left out; a stale jar is the expiry rule's business.
+- **Expired but still here** — gone off and still on the shelf.
+
+Each suggestion offers donate, bin, or keep. "Keep" records that you used it
+today, which is what stops it being suggested again.
+
+**Donation and throw-away checklist.** Anything you flag queues up under "ready
+to go", split into donate and throw away. Tick a line once the thing has actually
+left the house and it moves out of stock into history; "keep" puts it back.
+
 **CSV import and export**, through the system file picker — no storage
 permission. The exported header is also the import contract; unknown accounts and
 categories in an imported file are created as they are encountered.
@@ -72,22 +101,32 @@ or emulator:
 ./gradlew installDebug
 ```
 
-Unit tests cover the period engine, money parsing and formatting, and recurrence
-scheduling:
+Unit tests cover the period engine, money parsing and formatting, recurrence
+scheduling, expiry buckets and reminder timing:
 
 ```bash
 ./gradlew testDebugUnitTest
+```
+
+Instrumented tests need a running emulator or a connected device. They cover the
+version 1 to version 2 database migration against real data, and run the reminder
+worker end to end against the real notification manager:
+
+```bash
+./gradlew connectedDebugAndroidTest
 ```
 
 ## How it is put together
 
 ```
 core/          Money (minor-unit arithmetic and formatting), Period (the period
-               engine), PeriodController (the selection shared across tabs)
+               engine), PeriodController (the selection shared across tabs),
+               Expiry (urgency buckets and countdown wording)
 data/db/       Room entities, DAOs and the SQL behind every report
 data/repo/     FinanceRepository — the single entry point onto the database
 data/prefs/    DataStore-backed settings
 data/recurring/RecurringEngine — posts scheduled transactions that came due
+data/reminder/ ExpiryReminderWorker and the notification it posts
 data/csv/      CSV round-trip
 ui/            One package per screen, each a Compose screen plus its ViewModel
 di/            AppContainer — hand-rolled dependency graph
@@ -106,11 +145,19 @@ A few decisions worth knowing about:
   enough that a charting dependency would cost more than it saves.
 - **Enums persist by name**, not ordinal, so reordering a declaration cannot
   silently reinterpret existing rows.
-- **Dependency injection is a plain container.** With this few objects, a DI
+- **Dependency injection is a plain container**, reachable through
+  `AppContainer.get(context)` so background workers can get at it without
+  casting their context to the `Application` class. With this few objects, a DI
   framework would cost more in build time than it saves in wiring.
+- **Duplicate detection groups on a stored `nameKey`**, not on `lower(name)`, so
+  it uses an index instead of scanning every row.
+- **The reminder is a WorkManager periodic job**, so the schedule survives
+  reboots and app updates without a `BOOT_COMPLETED` receiver.
 
 ## Data and privacy
 
 Everything lives in a local SQLite database. There is no network permission in
-the manifest, no analytics, and no account. CSV export is the backup story, and
-Android's own backup rules cover the database and preferences.
+the manifest, no analytics, and no account. The only permission requested is
+`POST_NOTIFICATIONS`, asked for at the moment you switch the expiry reminder on
+and needed for nothing else. CSV export is the backup story, and Android's own
+backup rules cover the database and preferences.

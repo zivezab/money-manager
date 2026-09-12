@@ -38,6 +38,13 @@ import com.zive.moneymanager.ui.categories.CategoriesScreen
 import com.zive.moneymanager.ui.categories.CategoriesViewModel
 import com.zive.moneymanager.ui.editor.TxEditorScreen
 import com.zive.moneymanager.ui.editor.TxEditorViewModel
+import com.zive.moneymanager.ui.inventory.InventoryActions
+import com.zive.moneymanager.ui.inventory.InventoryScreen
+import com.zive.moneymanager.ui.inventory.InventoryTab
+import com.zive.moneymanager.ui.inventory.InventoryViewModel
+import com.zive.moneymanager.ui.inventory.ItemEditorCallbacks
+import com.zive.moneymanager.ui.inventory.ItemEditorScreen
+import com.zive.moneymanager.ui.inventory.ItemEditorViewModel
 import com.zive.moneymanager.ui.overview.OverviewScreen
 import com.zive.moneymanager.ui.overview.OverviewViewModel
 import com.zive.moneymanager.ui.recurring.RecurringScreen
@@ -51,7 +58,10 @@ import com.zive.moneymanager.ui.transactions.TransactionsViewModel
 
 /** Hosts the bottom navigation, the add-record FAB, and every destination. */
 @Composable
-fun MoneyManagerRoot(settings: AppSettings) {
+fun MoneyManagerRoot(
+    settings: AppSettings,
+    openExpiryChecklist: Boolean = false,
+) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
@@ -122,9 +132,12 @@ fun MoneyManagerRoot(settings: AppSettings) {
                     onJumpToToday = vm.periods::jumpToToday,
                     onOpenTransaction = { navController.navigate(Routes.editor(it)) },
                     onSeeAllRecords = { navController.navigateTab(Routes.TRANSACTIONS) },
-                    onOpenBudgets = { navController.navigateTab(Routes.BUDGETS) },
+                    onOpenBudgets = { navController.navigate(Routes.BUDGETS) },
                     onOpenAccounts = { navController.navigate(Routes.ACCOUNTS) },
                     onOpenStats = { navController.navigateTab(Routes.STATS) },
+                    onOpenInventory = { navController.navigateTab(Routes.INVENTORY) },
+                    onOpenInventoryItem = { navController.navigate(Routes.itemEditor(it)) },
+                    onMarkItemUsed = vm::markInventoryUsedUp,
                 )
             }
 
@@ -164,8 +177,77 @@ fun MoneyManagerRoot(settings: AppSettings) {
                 val state by vm.state.collectAsStateWithLifecycle()
                 BudgetsScreen(
                     state = state,
+                    onBack = { navController.popBackStack() },
                     onSave = vm::save,
                     onDelete = vm::delete,
+                )
+            }
+
+
+            composable(Routes.INVENTORY) {
+                val vm: InventoryViewModel = viewModel(factory = InventoryViewModel.Factory)
+                val state by vm.state.collectAsStateWithLifecycle()
+
+                // Arriving from the expiry notification lands on the checklist.
+                LaunchedEffect(openExpiryChecklist) {
+                    if (openExpiryChecklist) vm.setTab(InventoryTab.EXPIRING)
+                }
+
+                InventoryScreen(
+                    state = state,
+                    actions = InventoryActions(
+                        setTab = vm::setTab,
+                        setKind = vm::setKind,
+                        setLocation = vm::setLocation,
+                        setQuery = vm::setQuery,
+                        setShowResolved = vm::setShowResolved,
+                        clearFilters = vm::clearFilters,
+                        markUsedUp = vm::markUsedUp,
+                        markUsedToday = vm::markUsedToday,
+                        extendExpiry = vm::extendExpiry,
+                        flagForDonation = vm::flagForDonation,
+                        flagForDiscard = vm::flagForDiscard,
+                        returnToStock = vm::returnToStock,
+                        completeDonation = vm::completeDonation,
+                        completeDiscard = vm::completeDiscard,
+                    ),
+                    onOpenItem = { navController.navigate(Routes.itemEditor(it)) },
+                    onAddItem = { navController.navigate(Routes.itemEditor()) },
+                )
+            }
+
+            composable(
+                route = Routes.ITEM_EDITOR,
+                arguments = listOf(navArgument("itemId") { type = NavType.LongType }),
+            ) { entry ->
+                val itemId = entry.arguments?.getLong("itemId") ?: 0L
+                val vm: ItemEditorViewModel = viewModel(factory = ItemEditorViewModel.Factory)
+                val state by vm.state.collectAsStateWithLifecycle()
+                val finished by vm.finished.collectAsStateWithLifecycle()
+
+                LaunchedEffect(itemId) { vm.load(itemId) }
+                LaunchedEffect(finished) { if (finished) navController.popBackStack() }
+
+                ItemEditorScreen(
+                    state = state,
+                    onBack = { navController.popBackStack() },
+                    callbacks = ItemEditorCallbacks(
+                        onName = vm::setName,
+                        onKind = vm::setKind,
+                        onCategory = vm::setCategory,
+                        onLocation = vm::setLocation,
+                        onQuantity = vm::setQuantity,
+                        onUnit = vm::setUnit,
+                        onPurchaseDate = vm::setPurchaseDate,
+                        onExpiryDate = vm::setExpiryDate,
+                        onWarrantyEnd = vm::setWarrantyEnd,
+                        onLastUsed = vm::setLastUsed,
+                        onUnitCost = vm::setUnitCost,
+                        onStatus = vm::setStatus,
+                        onNote = vm::setNote,
+                        onSave = vm::save,
+                        onDelete = vm::delete,
+                    ),
                 )
             }
 
@@ -178,6 +260,7 @@ fun MoneyManagerRoot(settings: AppSettings) {
                     state = state,
                     message = message,
                     onMessageShown = vm::clearMessage,
+                    onOpenBudgets = { navController.navigate(Routes.BUDGETS) },
                     onOpenAccounts = { navController.navigate(Routes.ACCOUNTS) },
                     onOpenCategories = { navController.navigate(Routes.CATEGORIES) },
                     onOpenRecurring = { navController.navigate(Routes.RECURRING) },
@@ -187,6 +270,10 @@ fun MoneyManagerRoot(settings: AppSettings) {
                     onWeekStartChange = vm::setWeekStart,
                     onMonthStartDayChange = vm::setMonthStartDay,
                     onDefaultPeriodChange = vm::setDefaultPeriod,
+                    onExpiryHorizonChange = vm::setExpiryHorizonDays,
+                    onExpiryReminderEnabledChange = { vm.setExpiryReminderEnabled(context, it) },
+                    onExpiryReminderHourChange = { vm.setExpiryReminderHour(context, it) },
+                    onDeclutterMonthsChange = vm::setDeclutterIdleMonths,
                     onExport = { vm.exportTo(context, it) },
                     onImport = { vm.importFrom(context, it) },
                 )

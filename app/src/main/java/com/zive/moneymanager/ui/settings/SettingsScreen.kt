@@ -1,5 +1,9 @@
 package com.zive.moneymanager.ui.settings
 
+import android.Manifest
+import android.content.Intent
+import android.os.Build
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -22,6 +26,7 @@ import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material.icons.filled.Savings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -32,6 +37,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -39,11 +45,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.zive.moneymanager.core.CurrencyOption
 import com.zive.moneymanager.core.PeriodType
 import com.zive.moneymanager.data.prefs.ThemeMode
+import com.zive.moneymanager.data.reminder.ExpiryNotifier
 import com.zive.moneymanager.ui.components.SectionHeader
 import java.time.DayOfWeek
 import java.time.format.TextStyle
@@ -56,6 +64,7 @@ fun SettingsScreen(
     state: SettingsUiState,
     message: String?,
     onMessageShown: () -> Unit,
+    onOpenBudgets: () -> Unit,
     onOpenAccounts: () -> Unit,
     onOpenCategories: () -> Unit,
     onOpenRecurring: () -> Unit,
@@ -65,12 +74,37 @@ fun SettingsScreen(
     onWeekStartChange: (DayOfWeek) -> Unit,
     onMonthStartDayChange: (Int) -> Unit,
     onDefaultPeriodChange: (PeriodType) -> Unit,
+    onExpiryHorizonChange: (Int) -> Unit,
+    onExpiryReminderEnabledChange: (Boolean) -> Unit,
+    onExpiryReminderHourChange: (Int) -> Unit,
+    onDeclutterMonthsChange: (Int) -> Unit,
     onExport: (android.net.Uri) -> Unit,
     onImport: (android.net.Uri) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     val settings = state.settings
+    val context = LocalContext.current
+
+    // Android 13 introduced a runtime permission for notifications. Ask for it at
+    // the moment the user switches the reminder on, which is when the reason for
+    // asking is obvious, and only enable the reminder if it is actually granted.
+    val notificationsAllowed = remember(settings.expiryReminderEnabled) {
+        ExpiryNotifier.canPost(context)
+    }
+    val requestNotifications = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted -> onExpiryReminderEnabledChange(granted) }
+
+    fun toggleReminder(enabled: Boolean) {
+        when {
+            !enabled -> onExpiryReminderEnabledChange(false)
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ->
+                onExpiryReminderEnabledChange(true)
+            ExpiryNotifier.canPost(context) -> onExpiryReminderEnabledChange(true)
+            else -> requestNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
 
     // Storage Access Framework keeps the app free of storage permissions.
     val exportLauncher = rememberLauncherForActivityResult(
@@ -103,6 +137,14 @@ fun SettingsScreen(
             contentPadding = PaddingValues(bottom = 96.dp),
         ) {
             item { SectionHeader("Manage") }
+            item {
+                NavRow(
+                    icon = Icons.Filled.Savings,
+                    title = "Budgets",
+                    subtitle = "Spending caps by category or overall",
+                    onClick = onOpenBudgets,
+                )
+            }
             item {
                 NavRow(
                     icon = Icons.Filled.AccountBalanceWallet,
@@ -173,6 +215,87 @@ fun SettingsScreen(
                     isSelected = { it == settings.monthStartDay },
                     label = { it.toString() },
                     onSelect = onMonthStartDayChange,
+                )
+            }
+
+
+            item { SectionHeader("Inventory") }
+            item {
+                SettingLabel(
+                    "Expiring soon means ${settings.expiryHorizonDays} days ahead",
+                    "How far ahead the overview and the reminder look",
+                )
+                ChipRow(
+                    options = listOf(1, 2, 3, 5, 7, 10, 14, 21, 30),
+                    isSelected = { it == settings.expiryHorizonDays },
+                    label = { if (it == 1) "1 day" else "$it days" },
+                    onSelect = onExpiryHorizonChange,
+                )
+            }
+            item {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Daily expiry reminder", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "A notification when something is about to go off",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = settings.expiryReminderEnabled,
+                        onCheckedChange = ::toggleReminder,
+                    )
+                }
+            }
+            if (settings.expiryReminderEnabled && !notificationsAllowed) {
+                item {
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+                        Text(
+                            "Notifications are switched off for this app, so the reminder cannot appear.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                        TextButton(
+                            onClick = {
+                                context.startActivity(
+                                    Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                                        putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                                    }
+                                )
+                            },
+                            contentPadding = PaddingValues(0.dp),
+                        ) { Text("Open notification settings") }
+                    }
+                }
+            }
+
+            if (settings.expiryReminderEnabled) {
+                item {
+                    SettingLabel("Remind me at ${"%02d".format(settings.expiryReminderHour)}:00", null)
+                    ChipRow(
+                        options = (6..22).toList(),
+                        isSelected = { it == settings.expiryReminderHour },
+                        label = { "%02d:00".format(it) },
+                        onSelect = onExpiryReminderHourChange,
+                    )
+                }
+            }
+            item {
+                SettingLabel(
+                    "Flag things untouched for ${settings.declutterIdleMonths} months",
+                    "Drives the declutter suggestions",
+                )
+                ChipRow(
+                    options = listOf(1, 2, 3, 6, 9, 12, 18, 24),
+                    isSelected = { it == settings.declutterIdleMonths },
+                    label = { if (it == 1) "1 month" else "$it months" },
+                    onSelect = onDeclutterMonthsChange,
                 )
             }
 
